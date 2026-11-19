@@ -5,13 +5,14 @@ Mods for Claude Code: small plugins that change what Claude's own interface does
 | Mod | What it does |
 | --- | --- |
 | [teams-tasks](teams-tasks/) | Reads your recent Microsoft Teams conversations, works out what you need to do, and keeps those tasks in a panel beside the chat. |
+| [session-tracker](session-tracker/) | Shows every Claude session on your machine with the repository, worktree and branch it works in, and flags branches and worktrees that hold forgotten work or can be cleaned up. |
 
 ## Install a mod
 
-At the prompt of a terminal session:
+Use the mod's name from the table. At the prompt of a terminal session:
 
 ```
-/plugin install teams-tasks --marketplace PierreGode/Claude-mods
+/plugin install session-tracker --marketplace PierreGode/Claude-mods
 ```
 
 Answer `y` to add the marketplace, then pick a scope. The user scope loads the mod in every session, the desktop app's included.
@@ -19,7 +20,7 @@ Answer `y` to add the marketplace, then pick a scope. The user scope loads the m
 From a shell:
 
 ```
-claude plugin install teams-tasks --marketplace PierreGode/Claude-mods
+claude plugin install session-tracker --marketplace PierreGode/Claude-mods
 ```
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `PierreGode/Claude-mods`, then Add plugin.

@@ -9,6 +9,11 @@
       "name": "teams-tasks",
       "source": "./teams-tasks",
       "description": "Reads your recent Microsoft Teams conversations, works out what you need to do, and keeps those tasks in a panel beside the chat."
+    },
+    {
+      "name": "session-tracker",
+      "source": "./session-tracker",
+      "description": "Shows every Claude session on this machine with the repository, worktree and branch it works in, and flags branches and worktrees that hold unpushed work or can be cleaned up."
     }
   ]
 }
