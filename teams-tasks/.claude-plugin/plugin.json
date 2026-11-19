@@ -1,0 +1,46 @@
+{
+  "name": "teams-tasks",
+  "version": "0.1.0",
+  "author": { "name": "PierreGode" },
+  "description": "Reads your recent Microsoft Teams conversations, works out what you need to do, and keeps those tasks in a panel beside the chat.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "scanEveryMinutes": {
+      "type": "number",
+      "title": "Scan every (minutes)",
+      "description": "How often Teams is checked for new tasks while a session is open. 0 checks only when you run /teams-tasks scan.",
+      "default": 60
+    },
+    "lookbackDays": {
+      "type": "number",
+      "title": "First scan looks back (days)",
+      "description": "How many days of Teams messages the first scan reads. Later scans read from the last scan on.",
+      "default": 3
+    },
+    "model": {
+      "type": "string",
+      "title": "Scan model",
+      "description": "The model that reads the conversations. inherit uses the session's own model.",
+      "options": ["sonnet", "haiku", "opus", "inherit"],
+      "default": "sonnet"
+    },
+    "myName": {
+      "type": "string",
+      "title": "Your name in Teams",
+      "description": "Optional. Helps tell requests aimed at you from requests aimed at others in group chats.",
+      "default": ""
+    },
+    "tools": {
+      "type": "string",
+      "title": "Teams tools",
+      "description": "Optional. Exact names of the read-only Teams tools to use, separated by commas (mcp__server__tool). Empty finds them by itself.",
+      "default": ""
+    },
+    "openOnNewTasks": {
+      "type": "boolean",
+      "title": "Open the panel on new tasks",
+      "description": "Opens the Teams tasks panel when a scan finds something new.",
+      "default": true
+    }
+  }
+}

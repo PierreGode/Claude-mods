@@ -1,0 +1,14 @@
+{
+  "name": "claude-mods",
+  "description": "Mods for Claude Code, one folder each.",
+  "owner": {
+    "name": "PierreGode"
+  },
+  "plugins": [
+    {
+      "name": "teams-tasks",
+      "source": "./teams-tasks",
+      "description": "Reads your recent Microsoft Teams conversations, works out what you need to do, and keeps those tasks in a panel beside the chat."
+    }
+  ]
+}
