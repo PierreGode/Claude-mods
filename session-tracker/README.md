@@ -40,16 +40,27 @@ It needs `git` 2.31 or newer on the path. With git 2.41 or newer it can tell tha
 
 ## Use
 
+The mod puts one row above the prompt, so it is on screen without being asked:
+
+```
+Sessions  12 in 4 repos · 1 at risk · 3 to tidy · read 2 min ago   [ Open ] [ Refresh ] Hide
+```
+
+**Open** opens the panel, **Refresh** reads everything again, and **Hide** removes the row for this session.
+
 | You do | What happens |
 | --- | --- |
 | `/session-tracker` | Opens the panel and reads everything again if what it has is old. |
 | `/session-tracker refresh` | Reads everything again now. |
 | `/session-tracker list` | Prints the whole overview in the chat. |
+| `/session-tracker row` | Shows or hides the row above the prompt. |
 | Ask Claude, in your own words | Claude can read the overview itself: "which of my branches are safe to delete?", "what was I doing in shop-api last week?" |
 
 In the panel, **Refresh** reads again, **Only what needs attention** hides everything without a flag, and **Ask Claude to tidy** puts the clean-up steps in the prompt box as a draft for you to read and send. The status line shows a count only when something is at risk.
 
-While the panel is open it refreshes every five minutes. With the panel closed the mod does nothing.
+Where a surface cannot show a panel, `/session-tracker` prints the overview in the chat instead and says why.
+
+While the panel is open it reads again every five minutes. With only the row showing it reads every thirty. Every session shares the last read, so many open sessions still read once. With the row switched off and the panel closed, the mod does nothing.
 
 ## Options
 
@@ -57,8 +68,9 @@ Set them in `/config`, or with `claude plugin configure session-tracker`.
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `showRow` | `true` | Shows the row above the prompt. |
 | `days` | `14` | How far back sessions are listed. A repository is tracked when a session in this window worked in it. |
-| `refreshMinutes` | `5` | How often an open panel reads again. `0` reads only when you ask. |
+| `refreshMinutes` | `5` | How often an open panel reads again; the row alone reads six times slower. `0` reads only when you ask. |
 | `staleDays` | `3` | How long unpushed or uncommitted work must sit untouched before it is flagged. |
 | `extraRepos` | | Folders of repositories to track even when no recent session worked there, separated by semicolons. |
 

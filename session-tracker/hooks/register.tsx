@@ -1,6 +1,7 @@
-// Session tracker: a pane that lists every Claude session on this machine by
-// repository, worktree and branch, and flags what holds unsaved work or can
-// be cleaned up. It reads; the one thing it writes is a draft in the prompt box.
+// Session tracker: a row above the prompt and a pane that list every Claude
+// session on this machine by repository, worktree and branch, and flag what
+// holds unsaved work or can be cleaned up. It reads; the one thing it writes
+// is a draft in the prompt box.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -26,8 +27,13 @@ const PANE = 'session-tracker'
 const TITLE = 'Sessions'
 /** Where the last snapshot is kept for the next session; the tag is its shape. */
 const STORE_KEY = 'snapshot-1'
+const CLAIM_KEY = 'scanClaimAt'
 /** A snapshot this new is not read again when a command or the model asks. */
 const FRESH_MS = MINUTE
+/** With only the row above the prompt showing, the reads come this much slower. */
+const ROW_SLOWDOWN = 6
+/** A timer's read another session claimed this recently is left to that session. */
+const CLAIM_MS = 2 * MINUTE
 const MAX_SESSIONS_SHOWN = 4
 const MAX_QUIET_BRANCHES = 8
 
@@ -46,6 +52,10 @@ const statusAtom = atom({ plugin: 'session-tracker', key: 'status' } as const, I
 })
 const isFiltered = atom(
   { plugin: 'session-tracker', key: 'isFiltered' } as const,
+  false,
+)
+const isRowHidden = atom(
+  { plugin: 'session-tracker', key: 'isRowHidden' } as const,
   false,
 )
 
@@ -75,7 +85,13 @@ const isSnapshot = (value: unknown): value is TrackerSnapshot => {
 }
 
 /** The mod's options, as `register` last read them. */
-let settings = { days: 14, refreshMs: 5 * MINUTE, staleDays: 3, extraRepos: '' }
+let settings = {
+  days: 14,
+  refreshMs: 5 * MINUTE,
+  staleDays: 3,
+  extraRepos: '',
+  showsRow: true,
+}
 /** The scan under way, so two askers share one. */
 let running: Promise<TrackerSnapshot> | undefined
 let selfId = ''
@@ -157,11 +173,17 @@ async function refresh($: Engine, isForced: boolean): Promise<TrackerSnapshot> {
   return running
 }
 
-/** The minute tick: only a pane somebody can see is kept current. */
+/**
+ * The minute tick. What somebody can see is kept current: an open pane at the
+ * pace the options give, the row above the prompt at a slower one. Every
+ * session shares the last read, so ten open sessions still read once.
+ */
 async function tick($: Engine): Promise<void> {
   const pane = (await $.ui.panes()).find(one => one.id === PANE)
+  const isPaneUp = pane !== undefined && pane.isPlaced
+  const isRowUp = settings.showsRow && !(await read($, isRowHidden))
 
-  if (pane === undefined || !pane.isPlaced) {
+  if (!isPaneUp && !isRowUp) {
     return
   }
 
@@ -169,11 +191,42 @@ async function tick($: Engine): Promise<void> {
 
   const now = await $.clock.now()
   const held = await read($, snapshotAtom)
+  const every = settings.refreshMs * (isPaneUp ? 1 : ROW_SLOWDOWN)
+  const isDue = every > 0 && now - held.scannedAt >= every
+  const claimedAt = numberOf(await $.store.get(CLAIM_KEY), 0, 0, Number.MAX_SAFE_INTEGER)
 
-  if (settings.refreshMs > 0 && now - held.scannedAt >= settings.refreshMs) {
+  if (
+    isDue &&
+    now - claimedAt >= CLAIM_MS &&
+    (isPaneUp || (await $.session.surfaces()).length > 0)
+  ) {
+    await $.store.set(CLAIM_KEY, now)
     await refresh($, true)
   } else {
     await update($, statusAtom, (status): TrackerStatus => ({ ...status, tick: now }))
+  }
+}
+
+/**
+ * Opens the pane and reads again when what is held is old. Answers why the
+ * pane is not on screen, or "" when it is: not every surface places panes.
+ */
+async function openPane($: Engine, isForced: boolean): Promise<string> {
+  const opened = await $.ui.open({ id: PANE, title: TITLE })
+
+  quietly(refresh($, isForced))
+
+  return opened.isPlaced ? '' : opened.reason || 'this surface places no panes'
+}
+
+async function openFromRow($: Engine): Promise<void> {
+  const why = await openPane($, false)
+
+  if (why !== '') {
+    $.ui.toast(
+      `The Sessions panel cannot be shown here (${why}). Type /session-tracker list for the overview.`,
+      { timeoutMs: 8000 },
+    )
   }
 }
 
@@ -226,6 +279,7 @@ export const register: Register = (on, options) => {
     refreshMs: numberOf(options.refreshMinutes, 5, 0, 1440) * MINUTE,
     staleDays: numberOf(options.staleDays, 3, 1, 365),
     extraRepos: typeof options.extraRepos === 'string' ? options.extraRepos : '',
+    showsRow: options.showRow !== false,
   }
 
   on('session.start', async ($, e, next) => {
@@ -234,8 +288,8 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'session-tracker',
       description:
-        'Your Claude sessions with their repositories, worktrees and branches: opens the panel; "list" prints it, "refresh" reads it again',
-      argumentHint: '[list|refresh]',
+        'Your Claude sessions with their repositories, worktrees and branches: opens the panel; "list" prints it, "refresh" reads it again, "row" shows or hides the row above the prompt',
+      argumentHint: '[list|refresh|row]',
     })
     await $.tool.register({
       name: 'overview',
@@ -276,10 +330,26 @@ export const register: Register = (on, options) => {
       return { text: await listing($, '') }
     }
 
-    await $.ui.open({ id: PANE, title: TITLE })
+    if (asked === 'row') {
+      const isHidden = await update($, isRowHidden, hidden => !hidden)
+
+      return {
+        text: isHidden
+          ? 'The Sessions row above the prompt is hidden. /session-tracker row brings it back.'
+          : 'The Sessions row above the prompt is shown.',
+        isTextDisplayOnly: true,
+      }
+    }
 
     // The pane shows what is known at once and the scan as it lands.
-    quietly(refresh($, asked === 'refresh'))
+    const why = await openPane($, asked === 'refresh')
+
+    if (why !== '') {
+      // No pane on this surface: the overview is printed instead of promised.
+      return {
+        text: `The Sessions panel cannot be shown here (${why}), so here is the overview.\n\n${await listing($, '')}`,
+      }
+    }
 
     return {
       text:
@@ -293,6 +363,48 @@ export const register: Register = (on, options) => {
   on('tool.run', { tool: 'mcp__session-tracker__overview' }, async ($, e) => ({
     result: await listing($, line(e.repo, 100)),
   })).catch(() => ({ result: 'The session tracker could not read its overview.' }))
+
+  // One row above the prompt, so the tracker is on screen without being asked.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!settings.showsRow || e.props.hasSurvey || (await read($, isRowHidden))) {
+      return next(e)
+    }
+
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const snapshot = await read($, snapshotAtom)
+    const status = await read($, statusAtom)
+    const now = await $.clock.now()
+    const overview = overviewOf(snapshot, now, settings.staleDays)
+    const facts =
+      snapshot.scannedAt === 0
+        ? [status.phase === 'scanning' ? 'reading...' : 'not read yet']
+        : [
+            `${overview.sessions} in ${overview.repos.length} ${overview.repos.length === 1 ? 'repo' : 'repos'}`,
+            attentionText(overview),
+            status.phase === 'scanning' ? 'reading...' : `read ${ago(now, snapshot.scannedAt)}`,
+          ].filter(fact => fact !== '')
+
+    return (
+      <Box flexDirection="row" gap={1} flexWrap="wrap">
+        <Text>
+          <Text weight="semibold">Sessions</Text> <Text dimColor>{facts.join(' · ')}</Text>
+        </Text>
+        <Button key="row-open" label="Open" onPress={() => quietly(openFromRow($))} />
+        <Button
+          key="row-refresh"
+          label="Refresh"
+          onPress={() => quietly(refresh($, true))}
+        />
+        <Button
+          key="row-hide"
+          label="Hide"
+          plain
+          dimColor
+          onPress={() => quietly(update($, isRowHidden, () => true))}
+        />
+      </Box>
+    )
+  })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Link, Text } = $.ui.resolve(e)

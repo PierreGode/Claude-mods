@@ -26,6 +26,20 @@ const PANE = {
   },
 } as const
 
+const ROW = {
+  plugin: 'session-tracker',
+  component: 'AbovePrompt',
+  props: {
+    hasSurvey: false,
+    isCollapsed: false,
+    isWorking: false,
+    maxRows: 10,
+    bodyColumns: 100,
+    scroll: { offset: 0, bodyRows: 10 },
+    view: {},
+  },
+} as const
+
 const rows = (...all: object[]): string => all.map(row => JSON.stringify(row)).join('\n')
 
 // What Claude has recorded on this pretend machine: a session in a
@@ -136,12 +150,16 @@ const git = (argv: readonly string[]): string | undefined => {
 }
 
 // Nothing sits beneath the mod in a test: each hook here stands for the engine.
-const world = (on: On, given: { store?: Record<string, unknown>; isPaneUp?: boolean } = {}) => {
+const world = (
+  on: On,
+  given: { store?: Record<string, unknown>; isPaneUp?: boolean; isPaneRefused?: boolean } = {},
+) => {
   const clock = mock.clock(on, { now: NOW })
   const store = new Map<string, unknown>(Object.entries(given.store ?? {}))
   const gitCalls: (readonly string[])[] = []
   const gitEnv: (Record<string, string> | undefined)[] = []
   const fills: string[] = []
+  const toasts: string[] = []
   const read: string[] = []
   let status: string | undefined
 
@@ -155,7 +173,13 @@ const world = (on: On, given: { store?: Record<string, unknown>; isPaneUp?: bool
   on('session.id', () => ({ value: 's-self' }))
   on('command.register', () => ({ value: { command: 'session-tracker' } }))
   on('tool.register', () => ({ value: { tool: TOOL } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  on('ui.open', () => ({
+    value:
+      given.isPaneRefused === true
+        ? { isPlaced: false, reason: 'no surface places panes' }
+        : { isPlaced: true },
+  }))
   on('ui.panes', () => ({
     value:
       given.isPaneUp === true
@@ -175,7 +199,11 @@ const world = (on: On, given: { store?: Record<string, unknown>; isPaneUp?: bool
 
     return { value: undefined }
   })
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+
+    return { value: undefined }
+  })
   on('prompt.read', () => ({ value: { text: '', cursor: 0 } }))
   on('prompt.fill', (_, e) => {
     fills.push(e.text)
@@ -215,6 +243,7 @@ const world = (on: On, given: { store?: Record<string, unknown>; isPaneUp?: bool
     gitCalls,
     gitEnv,
     fills,
+    toasts,
     read,
     status: () => status,
     snapshot: () => store.get('snapshot-1') as TrackerSnapshot | undefined,
@@ -327,12 +356,48 @@ test('the model asks for the overview through the tool', async ($, on) => {
   expect(String(none.result)).toMatch(/0 sessions in 0 repositories\. Nothing needs attention\./)
 })
 
-test('an open pane is read again when its snapshot is old; a closed one never', async ($, on) => {
+test('with the row switched off and no pane, nothing is ever read', { options: { showRow: false } }, async ($, on) => {
   const shut = world(on)
 
   await start($)
-  await shut.clock.advance(20 * 60_000)
+  await shut.clock.advance(120 * 60_000)
   expect(shut.gitCalls).toHaveLength(0)
+
+  // And no row is drawn.
+  const ui = await $.ui.mount({ ...ROW, surface: 'desktop' })
+
+  expect(await ui.find({ type: 'Text', text: /Sessions/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the row alone is read at once, then kept current at a slower pace', async ($, on) => {
+  const { clock, gitCalls, store } = world(on)
+
+  await start($)
+  // Nothing was ever read: the first tick reads, so the row has its counts.
+  await clock.advance(60_000)
+
+  const first = gitCalls.length
+
+  expect(first).toBeGreaterThan(0)
+  // The read is claimed, so another session's timer leaves it alone.
+  expect(store.get('scanClaimAt')).toBe(NOW + 60_000)
+
+  await clock.advance(29 * 60_000)
+  expect(gitCalls).toHaveLength(first)
+  await clock.advance(2 * 60_000)
+  expect(gitCalls.length).toBeGreaterThan(first)
+})
+
+test('a read another session just claimed is not started twice', async ($, on) => {
+  const { clock, gitCalls } = world(on, { store: { scanClaimAt: NOW - 30_000 } })
+
+  await start($)
+  await clock.advance(60_000)
+  expect(gitCalls).toHaveLength(0)
+
+  await clock.advance(60_000)
+  expect(gitCalls.length).toBeGreaterThan(0)
 })
 
 test('an open pane keeps itself current', async ($, on) => {
@@ -407,4 +472,70 @@ test('the widget shows the counts at a glance', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /2 sessions · 1 repo/ })).toBeDefined()
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
   await ui.unmount()
+})
+
+test('the row above the prompt shows the counts wherever a band is drawn', async ($, on) => {
+  world(on)
+  await start($)
+
+  // Before anything is read, it says so.
+  const empty = await $.ui.mount({ ...ROW, surface: 'desktop' })
+
+  expect(await empty.find({ type: 'Text', text: /^Sessions not read yet$/ })).toBeDefined()
+  await empty.press({ key: 'row-refresh' })
+  expect(
+    await empty.find({ type: 'Text', text: /^Sessions 2 in 1 repo · 1 to tidy · read now$/ }),
+  ).toBeDefined()
+  await empty.unmount()
+
+  // A band is drawn on these three surfaces; VS Code has none.
+  for (const surface of ['terminal', 'desktop', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...ROW, surface })
+
+    expect(
+      await ui.find({ type: 'Text', text: /^Sessions 2 in 1 repo · 1 to tidy · read now$/ }),
+    ).toBeDefined()
+
+    await ui.press({ key: 'row-hide' })
+    expect(await ui.find({ type: 'Text', text: /Sessions/ })).toBeUndefined()
+
+    const shown = await run($, 'row')
+
+    expect(shown.text).toMatch(/is shown/)
+    expect(await ui.find({ type: 'Text', text: /Sessions/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('where no pane can be placed, the overview is printed and the row says why', async ($, on) => {
+  const { toasts } = world(on, { isPaneRefused: true })
+
+  await start($)
+
+  const ran = await run($, '')
+
+  expect(ran.text).toMatch(/The Sessions panel cannot be shown here \(no surface places panes\)/)
+  expect(ran.text).toMatch(/2 sessions in 1 repository\. 1 to tidy\./)
+
+  const ui = await $.ui.mount({ ...ROW, surface: 'desktop' })
+
+  await ui.press({ key: 'row-open' })
+  expect(toasts.at(-1)).toMatch(/cannot be shown here \(no surface places panes\)/)
+  await ui.unmount()
+})
+
+test('the row opens the pane where one can be placed', async ($, on) => {
+  const { toasts } = world(on)
+
+  await start($)
+
+  const ui = await $.ui.mount({ ...ROW, surface: 'desktop' })
+
+  await ui.press({ key: 'row-open' })
+  expect(toasts).toHaveLength(0)
+  await ui.unmount()
+
+  const ran = await run($, '')
+
+  expect(ran.text).toBe('Sessions panel opened.')
 })

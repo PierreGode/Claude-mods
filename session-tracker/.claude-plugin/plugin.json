@@ -1,10 +1,18 @@
 {
   "name": "session-tracker",
-  "version": "0.1.0",
-  "author": { "name": "PierreGode" },
+  "version": "0.2.0",
+  "author": {
+    "name": "PierreGode"
+  },
   "description": "Shows every Claude session on this machine with the repository, worktree and branch it works in, and flags branches and worktrees that hold unpushed work or can be cleaned up.",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "showRow": {
+      "type": "boolean",
+      "title": "Row above the prompt",
+      "description": "Shows one line above the prompt with the counts and buttons to open the panel.",
+      "default": true
+    },
     "days": {
       "type": "number",
       "title": "Sessions from the last (days)",
@@ -14,7 +22,7 @@
     "refreshMinutes": {
       "type": "number",
       "title": "Refresh every (minutes)",
-      "description": "How often the panel reads sessions and git again while it is open. 0 refreshes only when you ask.",
+      "description": "How often the panel reads sessions and git again while it is open. With only the row above the prompt showing, it reads six times slower. 0 reads only when you ask.",
       "default": 5
     },
     "staleDays": {
