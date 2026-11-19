@@ -1,0 +1,33 @@
+{
+  "name": "session-tracker",
+  "version": "0.1.0",
+  "author": { "name": "PierreGode" },
+  "description": "Shows every Claude session on this machine with the repository, worktree and branch it works in, and flags branches and worktrees that hold unpushed work or can be cleaned up.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "days": {
+      "type": "number",
+      "title": "Sessions from the last (days)",
+      "description": "How far back sessions are listed. A repository is tracked when a session in this window worked in it.",
+      "default": 14
+    },
+    "refreshMinutes": {
+      "type": "number",
+      "title": "Refresh every (minutes)",
+      "description": "How often the panel reads sessions and git again while it is open. 0 refreshes only when you ask.",
+      "default": 5
+    },
+    "staleDays": {
+      "type": "number",
+      "title": "Idle after (days)",
+      "description": "A worktree with uncommitted changes, or with no session, is flagged once it has been untouched this long.",
+      "default": 3
+    },
+    "extraRepos": {
+      "type": "string",
+      "title": "More repositories",
+      "description": "Optional. Folders of repositories to track even when no recent session worked there, separated by semicolons.",
+      "default": ""
+    }
+  }
+}
