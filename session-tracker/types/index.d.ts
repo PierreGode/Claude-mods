@@ -96,6 +96,8 @@ declare module 'claude-code' {
       status: Shaped<TrackerStatus>
       /** True while the pane lists only what needs attention. */
       isFiltered: boolean
+      /** True once the person hid the row above the prompt for this session. */
+      isRowHidden: boolean
     }
   }
 }
